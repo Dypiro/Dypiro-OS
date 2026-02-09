@@ -6,7 +6,6 @@
 #include <flanterm/backends/fb.h>
 #include "kernel.h"
 #include "printf.h"
-#include "gdt.h"
 
 void outb8(uint16_t port, uint8_t value) {
     asm("outb %1, %0" : : "dN" (port), "a" (value));
@@ -129,7 +128,6 @@ void _start(void) {
     ft_ctx = flanterm_fb_simple_init(
     framebuffer->address, framebuffer->width, framebuffer->height, framebuffer->pitch
     );
-    GDT_MAIN();
     timer_init();
 
     kmain();
