@@ -149,11 +149,11 @@ void kmain(){
         printf(">");
         keyboard();
         delay(400);
-        if (strcmp(msg, "test")){
-            printf("haha yez\n");
+        if (strcmp(msg, "ver")){
+            printf("Dypiro-OS 2.0\n");
         }
         else if (strcmp(msg, "help")){
-            printf("-help\n-test\n-clear\n-echo\n-rng\n-reboot\n-halt\n");
+            printf("-help\n-ver\n-clear\n-echo\n-rng\n-reboot\n-halt\n");
         }
         else if (strcmp(msg, "rng")){
             printf("%i\n", random(0, 100));
