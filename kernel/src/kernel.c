@@ -9,6 +9,7 @@
 #include "main.h"
 #define pass (void)0
 
+static int shift_pressed = 0;
 int scancode;
 int element = 0;
 char msg[50] = {};
@@ -25,52 +26,85 @@ void reset_keyboard(){
     element = 0;
     last_scancode = 0;
     key_repeat_started = 0;
-    char msg[50] = {};
 }
 
 void keyboard(){
+    int cursor = 0;   // cursor position inside msg
+
     while (1){
         uint8_t scancode = read_port(0x60);
-        
-        // Key release event (scancode > 128)
-        if (scancode > 128){
+
+        if (scancode > 128) { //key release
+            uint8_t released = scancode - 128;
+
+            if (released == 42 || released == 54) // LShift or RShift
+                shift_pressed = 0;
+
             last_scancode = 0;
-            key_repeat_started = 0;
             continue;
         }
-        
-        // New key pressed (different from previous)
+        //SHIFT
+        if (scancode == 42 || scancode == 54) { // LShift or RShift
+            shift_pressed = 1;
+            last_scancode = scancode;
+            delay(100);
+            continue;
+        }
+
         if (scancode != last_scancode){
             last_scancode = scancode;
-            key_repeat_started = 0;
-            
-            char character = keyboard_map[scancode];
-            printf("%c", character);
-            
-            // Enter key - break out of input loop
-            if (scancode == 28){
+
+            //ENTER
+            if (scancode == 28){ //Enter
+                printf("\n");
                 break;
             }
-            else{
-                msg[element] = character;
-                element++;
+
+            //BACKSPACE 
+            if (scancode == 14){ //Backspace
+                if (cursor > 0){
+                    cursor--;
+                    element--;
+                    msg[cursor] = 0;
+                    printf("\b \b");   // erase from screen
+                }
+                delay(100);
+                continue;
             }
-            
-            // Wait before allowing key repeat to start
-            delay(500);
-        }
-        // Key is being held down - handle repeat
-        else if (last_scancode != 0){
-            char character = keyboard_map[scancode];
-            printf("%c", character);
-            msg[element] = character;
-            element++;
-            
-            // Delay between repeat characters
-            delay(100);
+
+            //NORMAL CHARACTER
+            char character;
+
+            // pick map based on shift
+            if (shift_pressed)
+                character = keyboard_map_shift[scancode];
+            else
+                character = keyboard_map[scancode];
+
+
+            if (character >= 'A' && character <= 'Z') {
+                if (shift_pressed == 0)
+                    character = character + 32;      // a -> A
+            }
+
+
+            if (character && element < sizeof(msg)-1){
+                // insert at cursor (not only at end)
+                for (int i = element; i > cursor; i--){
+                    msg[i] = msg[i-1];
+                }
+                msg[cursor] = character;
+                element++;
+                cursor++;
+
+                printf("%c", character);
+            }
+
+            delay(200);
         }
     }
 }
+
 
 int strcmp(const char *str1, const char *str2) {
     while (*str1 && (*str1 == *str2)) {
@@ -78,6 +112,35 @@ int strcmp(const char *str1, const char *str2) {
         str2++;
     }
     return (*str1 == *str2) ? 1 : 0;
+}
+
+
+int strncmp(const char *cs, const char *ct, size_t count)
+{
+	unsigned char c1, c2;
+
+	while (count) {
+		c1 = *cs++;
+		c2 = *ct++;
+		if (c1 != c2)
+			return c1 < c2 ? -1 : 1;
+		if (!c1)
+			break;
+		count--;
+	}
+	return 0;
+}
+
+// random generator
+size_t seed = 1;
+const size_t a = 2001;
+const size_t c = 1 << 30;
+const size_t m = (1 << 63) - 1;
+
+int random(int min, int max) {
+	int range = max - min;
+	seed = (a * seed + c) % m;
+	return min + (int)(seed % range);
 }
 
 void kmain(){
@@ -88,6 +151,26 @@ void kmain(){
         delay(400);
         if (strcmp(msg, "test")){
             printf("haha yez\n");
+        }
+        else if (strcmp(msg, "help")){
+            printf("-help\n-test\n-clear\n-echo\n-rng\n-reboot\n-halt\n");
+        }
+        else if (strcmp(msg, "rng")){
+            printf("%i\n", random(0, 100));
+        }
+        else if (strcmp(msg, "clear")){
+            for (int i = 0; i < 60; i++)
+                printf("\n");
+        }
+        else if (strncmp(msg, "echo ", 5) == 0){
+            printf("%s\n", msg + 5);
+        }
+        else if (strcmp(msg, "reboot")){
+           write_port(0x64, 0xFE); // classic PC reboot
+        }
+        else if (strcmp(msg, "halt")){
+            printf("This computer is safe to turn off manually.\nSYSTEM HALTED!!!");
+            asm("hlt"); // kernel becomes disfunctional and safe to power off
         }
         else{
             printf("No such command as: %s\n", msg);
