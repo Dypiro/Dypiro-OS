@@ -9,7 +9,7 @@
 #include "main.h"
 //#include "io.h"
 #define pass (void)0
-
+//TODO: 0X20 0X20 is already present in idt.c, no need in declearing the end twice
 static int shift_pressed = 0;
 int scancode;
 int element = 0;
@@ -29,6 +29,18 @@ void keyboard_handler_c() {
     // Send EOI (End Of Interrupt) to the Master PIC
     write_port(0x20, 0x20); 
 }
+
+volatile uint64_t ticks = 0;
+
+void timer_handler_c() {
+    ticks++;
+    if (ticks % 10 == 0) {
+        // This will print every 1 second if frequency is 100Hz
+        printf("One second passed...\n");
+    }
+    write_port(0x20, 0x20); // Always send the EOI!
+}
+
 // Track key state for repeat handling
 static uint8_t last_scancode = 0;
 static uint8_t key_repeat_started = 0;

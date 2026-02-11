@@ -38,3 +38,14 @@ void pic_init() {
     write_port(0x21, 0xFD); 
     write_port(0xA1, 0xFF); 
 }
+void timer_init(uint32_t frequency) {
+    uint32_t divisor = 1193182 / frequency;
+
+    // Send the command byte (0x36): 
+    // Binary 00 (Channel 0) 11 (Access low/high byte) 011 (Mode 3: Square Wave) 0 (Binary)
+    write_port(0x43, 0x36);
+
+    // Send the divisor (split into low and high bytes)
+    write_port(0x40, (uint8_t)(divisor & 0xFF));
+    write_port(0x40, (uint8_t)((divisor >> 8) & 0xFF));
+}

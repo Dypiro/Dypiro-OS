@@ -1,9 +1,6 @@
 [bits 64]
-extern keyboard_handler_c
-global keyboard_handler_asm
 
-keyboard_handler_asm: ; This is considered an ISR Entry point
-    ; 1. Save the volatile registers (the ones C might change)
+interrupt_common_stub:
     push rax
     push rcx
     push rdx
@@ -14,10 +11,11 @@ keyboard_handler_asm: ; This is considered an ISR Entry point
     push r10
     push r11
 
-    ; 2. Call your C logic
-    call keyboard_handler_c
+    ; Call the C dispatcher
+    mov rdi, rsp        ; Pass the stack pointer as the first argument (registers)
+    extern irq_handler
+    call irq_handler
 
-    ; 3. Restore the registers in exact reverse order
     pop r11
     pop r10
     pop r9
@@ -27,6 +25,17 @@ keyboard_handler_asm: ; This is considered an ISR Entry point
     pop rdx
     pop rcx
     pop rax
-
-    ; 4. Return to the interrupted code
+    add rsp, 16         ; Clean up the 2 values we pushed in the specific handlers
     iretq
+
+global timer_handler_asm
+timer_handler_asm:
+    push 0              ; Dummy error code
+    push 32             ; Interrupt number
+    jmp interrupt_common_stub
+
+global keyboard_handler_asm
+keyboard_handler_asm:
+    push 0              ; Dummy error code
+    push 33             ; Interrupt number
+    jmp interrupt_common_stub

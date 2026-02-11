@@ -113,10 +113,10 @@ static void hcf(void) {
 #define PIT_COMMAND_PORT       0x43
 #define PIT_FREQUENCY          1193182  // PIT operates at 1.193182 MHz
 
-void timer_init() {
+/*void timer_init() {
     // Send command byte to PIT
     outb8(PIT_COMMAND_PORT, 0x36); // 0x36 sets channel 0, access mode, and operating mode
-}
+}*/
 
 
 // The following will be our kernel's entry point.
@@ -140,7 +140,7 @@ void _start(void) {
     ft_ctx = flanterm_fb_simple_init(
     framebuffer->address, framebuffer->width, framebuffer->height, framebuffer->pitch
     );
-    timer_init();
+//    timer_init();
     init_gdt();
 //    write_port(0x20,0x11); //remap pic
 //    write_port(0xA0,0x11); //remap pic
