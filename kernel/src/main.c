@@ -6,7 +6,9 @@
 #include <flanterm/backends/fb.h>
 #include "kernel.h"
 #include "printf.h"
-
+#include "gdt.h"
+#include "idt.h"
+#include "pic.h"
 void outb8(uint16_t port, uint8_t value) {
     asm("outb %1, %0" : : "dN" (port), "a" (value));
 }
@@ -15,6 +17,16 @@ uint8_t inb8(uint16_t port) {
     asm("inb %1, %0" : "=a" (r) : "dN" (port));
     return r;
 }
+
+extern uint8_t read_port(uint16_t port);
+extern void write_port(uint16_t port, uint8_t value);
+
+
+
+
+
+
+
 struct flanterm_context *ft_ctx;
 // Set the base revision to 1, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -129,7 +141,12 @@ void _start(void) {
     framebuffer->address, framebuffer->width, framebuffer->height, framebuffer->pitch
     );
     timer_init();
-
+    init_gdt();
+//    write_port(0x20,0x11); //remap pic
+//    write_port(0xA0,0x11); //remap pic
+    pic_init();
+    init_idt();
+    __asm__ volatile("sti"); // Set Interrupt Flag
     kmain();
     // We're done, just hang...
     hcf();

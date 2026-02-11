@@ -7,6 +7,7 @@
 #include "keyboard.h"
 #include "timer.h"
 #include "main.h"
+//#include "io.h"
 #define pass (void)0
 
 static int shift_pressed = 0;
@@ -16,11 +17,23 @@ char msg[50] = {};
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 
+void keyboard_handler_c() {
+    uint8_t scancode = read_port(0x60); // Read the key
+    
+    // If the top bit is set, it's a "key released" event (ignore for now)
+    if (!(scancode & 0x80)) {
+        if (keyboard_map[scancode]) {
+            printf("%c", keyboard_map[scancode]);
+        }
+    }
+    // Send EOI (End Of Interrupt) to the Master PIC
+    write_port(0x20, 0x20); 
+}
 // Track key state for repeat handling
 static uint8_t last_scancode = 0;
 static uint8_t key_repeat_started = 0;
 
-void reset_keyboard(){
+void reset_keyboard(){ //WILL BE REWORKED
     scancode = 129;
     memset(msg,0,sizeof(msg));
     element = 0;
@@ -28,7 +41,7 @@ void reset_keyboard(){
     key_repeat_started = 0;
 }
 
-void keyboard(){
+void keyboard(){ //THIS IS OLD AND WILL BE REWORKED
     int cursor = 0;   // cursor position inside msg
 
     while (1){
@@ -145,9 +158,9 @@ int random(int min, int max) {
 
 void kmain(){
     while (1){
-        //keyboard manoovering
-        printf(">");
-        keyboard();
+        /*//keyboard manoovering
+        //printf(">");
+        //keyboard();
         delay(400);
         if (strcmp(msg, "ver")){
             printf("Dypiro-OS 2.0\n");
@@ -175,6 +188,7 @@ void kmain(){
         else{
             printf("No such command as: %s\n", msg);
         }
-        reset_keyboard();
+        //reset_keyboard();*/
+        ;;
     }
 }
