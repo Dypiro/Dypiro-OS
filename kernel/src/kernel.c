@@ -5,131 +5,51 @@
 #include "printf.h"
 #include "kernel.h"
 #include "keyboard.h"
-#include "timer.h"
 #include "main.h"
 //#include "io.h"
 #define pass (void)0
-//TODO: 0X20 0X20 is already present in idt.c, no need in declearing the end twice
+#define MAX_COMMAND_LEN 128
+
+char shell_buffer[MAX_COMMAND_LEN];
+int buffer_idx = 0;
+
 static int shift_pressed = 0;
 int scancode;
 int element = 0;
+uint64_t target_ticks = 0;
 char msg[50] = {};
+int cursor = 0;   // cursor position inside msg
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 
 void keyboard_handler_c() {
-    uint8_t scancode = read_port(0x60); // Read the key
-    
-    // If the top bit is set, it's a "key released" event (ignore for now)
-    if (!(scancode & 0x80)) {
-        if (keyboard_map[scancode]) {
-            printf("%c", keyboard_map[scancode]);
+    uint8_t scancode = read_port(0x60);
+    if (!(scancode & 0x80)) { // Key press
+        char c = keyboard_map[scancode];
+        if (c) {
+            shell_input(c);
         }
     }
-    // Send EOI (End Of Interrupt) to the Master PIC
-    write_port(0x20, 0x20); 
 }
 
-volatile uint64_t ticks = 0;
+// Simple string-to-int conversion
+int simple_atoi(char* str) {
+    int res = 0;
+    for (int i = 0; str[i] != '\0'; ++i) {
+        if (str[i] < '0' || str[i] > '9') break; // Stop if not a digit
+        res = res * 10 + str[i] - '0';
+    }
+    return res;
+}
+
+uint64_t ticks = 0;
 
 void timer_handler_c() {
     ticks++;
-    if (ticks % 10 == 0) {
-        // This will print every 1 second if frequency is 100Hz
-        printf("One second passed...\n");
-    }
-    write_port(0x20, 0x20); // Always send the EOI!
-}
-
-// Track key state for repeat handling
-static uint8_t last_scancode = 0;
-static uint8_t key_repeat_started = 0;
-
-void reset_keyboard(){ //WILL BE REWORKED
-    scancode = 129;
-    memset(msg,0,sizeof(msg));
-    element = 0;
-    last_scancode = 0;
-    key_repeat_started = 0;
-}
-
-void keyboard(){ //THIS IS OLD AND WILL BE REWORKED
-    int cursor = 0;   // cursor position inside msg
-
-    while (1){
-        uint8_t scancode = read_port(0x60);
-
-        if (scancode > 128) { //key release
-            uint8_t released = scancode - 128;
-
-            if (released == 42 || released == 54) // LShift or RShift
-                shift_pressed = 0;
-
-            last_scancode = 0;
-            continue;
-        }
-        //SHIFT
-        if (scancode == 42 || scancode == 54) { // LShift or RShift
-            shift_pressed = 1;
-            last_scancode = scancode;
-            delay(100);
-            continue;
-        }
-
-        if (scancode != last_scancode){
-            last_scancode = scancode;
-
-            //ENTER
-            if (scancode == 28){ //Enter
-                printf("\n");
-                break;
-            }
-
-            //BACKSPACE 
-            if (scancode == 14){ //Backspace
-                if (cursor > 0){
-                    cursor--;
-                    element--;
-                    msg[cursor] = 0;
-                    printf("\b \b");   // erase from screen
-                }
-                delay(100);
-                continue;
-            }
-
-            //NORMAL CHARACTER
-            char character;
-
-            // pick map based on shift
-            if (shift_pressed)
-                character = keyboard_map_shift[scancode];
-            else
-                character = keyboard_map[scancode];
-
-
-            if (character >= 'A' && character <= 'Z') {
-                if (shift_pressed == 0)
-                    character = character + 32;      // a -> A
-            }
-
-
-            if (character && element < sizeof(msg)-1){
-                // insert at cursor (not only at end)
-                for (int i = element; i > cursor; i--){
-                    msg[i] = msg[i-1];
-                }
-                msg[cursor] = character;
-                element++;
-                cursor++;
-
-                printf("%c", character);
-            }
-
-            delay(200);
-        }
+    if (ticks == target_ticks) {
+       printf("\ncount target reached!\n>");
     }
 }
-
 
 int strcmp(const char *str1, const char *str2) {
     while (*str1 && (*str1 == *str2)) {
@@ -156,6 +76,59 @@ int strncmp(const char *cs, const char *ct, size_t count)
 	return 0;
 }
 
+void shell_input(char c) {
+    if (c == '\n') {
+        shell_buffer[buffer_idx] = '\0'; // Null-terminate the string
+        execute_command(shell_buffer);
+        buffer_idx = 0;                  // Reset buffer
+        printf("\n>");
+    } 
+    else if (c == '\b') {
+        if (buffer_idx > 0) {
+            buffer_idx--;
+            printf("\b \b"); // Backspace, space (to clear), Backspace
+        }
+    } 
+    else if (buffer_idx < MAX_COMMAND_LEN - 1) {
+        shell_buffer[buffer_idx++] = c;
+        printf("%c", c); // Echo the character back to the user
+    }
+}
+
+void execute_command(char* input) {
+    if (strcmp(input, "help")) {
+        printf("\nAvailable commands: help, clear, ticks, sleep");
+    } 
+    else if (strcmp(input, "clear")) {
+        // If you have a clear screen function, call it here
+        printf("\033[2J\033[H"); // Standard ANSI clear (if supported)
+    } 
+    else if (strcmp(input, "ticks")) {
+        printf("\nCurrent system ticks: %d", (int)ticks);
+    } 
+    // SLEEP COMMAND: expects "sleep <ms>"
+    else if (strncmp(input, "count ", 6) == 0) { // Using your strncmp logic
+        int ms = simple_atoi(input + 6);    // Skip the "sleep " part
+        if (ms > 0) {
+            target_ticks = ticks + ms; // Assuming 1000Hz (1ms per tick)
+            printf("\nCounting to %d ticks...", ms);
+        }
+    }
+    // ECHO COMMAND: expects "echo <message>"
+    else if (strncmp(input, "echo ", 5) == 0) {
+        printf("\n%s", input + 5); // Jump 5 chars ahead to skip "echo "
+    }
+
+    else if (input[0] == '\0') {
+        // Do nothing for empty enter
+    }
+    else {
+        printf("\nUnknown command: %s", input);
+    }
+}
+
+
+
 // random generator
 size_t seed = 1;
 const size_t a = 2001;
@@ -170,37 +143,6 @@ int random(int min, int max) {
 
 void kmain(){
     while (1){
-        /*//keyboard manoovering
-        //printf(">");
-        //keyboard();
-        delay(400);
-        if (strcmp(msg, "ver")){
-            printf("Dypiro-OS 2.0\n");
-        }
-        else if (strcmp(msg, "help")){
-            printf("-help\n-ver\n-clear\n-echo\n-rng\n-reboot\n-halt\n");
-        }
-        else if (strcmp(msg, "rng")){
-            printf("%i\n", random(0, 100));
-        }
-        else if (strcmp(msg, "clear")){
-            for (int i = 0; i < 60; i++)
-                printf("\n");
-        }
-        else if (strncmp(msg, "echo ", 5) == 0){
-            printf("%s\n", msg + 5);
-        }
-        else if (strcmp(msg, "reboot")){
-           write_port(0x64, 0xFE); // classic PC reboot
-        }
-        else if (strcmp(msg, "halt")){
-            printf("This computer is safe to turn off manually.\nSYSTEM HALTED!!!");
-            asm("hlt"); // kernel becomes disfunctional and safe to power off
-        }
-        else{
-            printf("No such command as: %s\n", msg);
-        }
-        //reset_keyboard();*/
         ;;
     }
 }

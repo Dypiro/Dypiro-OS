@@ -65,6 +65,6 @@ void irq_handler(struct registers* regs) {
         keyboard_handler_c();
     }
     
-    // You can even send the EOI here once for everyone!
+    // EOI (End Of Interrupt)
     write_port(0x20, 0x20);
 }

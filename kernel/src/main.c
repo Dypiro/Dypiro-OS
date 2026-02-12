@@ -140,13 +140,11 @@ void _start(void) {
     ft_ctx = flanterm_fb_simple_init(
     framebuffer->address, framebuffer->width, framebuffer->height, framebuffer->pitch
     );
-//    timer_init();
     init_gdt();
-//    write_port(0x20,0x11); //remap pic
-//    write_port(0xA0,0x11); //remap pic
     pic_init();
     init_idt();
     __asm__ volatile("sti"); // Set Interrupt Flag
+    printf(">");
     kmain();
     // We're done, just hang...
     hcf();
