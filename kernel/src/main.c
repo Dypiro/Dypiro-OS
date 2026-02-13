@@ -9,6 +9,8 @@
 #include "gdt.h"
 #include "idt.h"
 #include "pic.h"
+#include "mem.h"
+
 void outb8(uint16_t port, uint8_t value) {
     asm("outb %1, %0" : : "dN" (port), "a" (value));
 }
@@ -20,8 +22,6 @@ uint8_t inb8(uint16_t port) {
 
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
-
-
 
 
 
@@ -58,16 +58,6 @@ void *memcpy(void *dest, const void *src, size_t n) {
     }
 
     return dest;
-}
-
-void *memset(void *s, int c, size_t n) {
-    uint8_t *p = (uint8_t *)s;
-
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)c;
-    }
-
-    return s;
 }
 
 void *memmove(void *dest, const void *src, size_t n) {
@@ -116,8 +106,19 @@ static void hcf(void) {
 /*void timer_init() {
     // Send command byte to PIT
     outb8(PIT_COMMAND_PORT, 0x36); // 0x36 sets channel 0, access mode, and operating mode
-}*/
+}*/ 
 
+/*void test_pmm() {
+    printf("test pmm engaged");
+    uint64_t addr1 = pmm_alloc();
+    uint64_t addr2 = pmm_alloc();
+    printf("\nAllocated: %x, %x", addr1, addr2);
+    
+    pmm_free_page(addr1);
+    uint64_t addr3 = pmm_alloc();
+    printf("\nAfter free, new alloc: %x", addr3); 
+    // addr3 should equal addr1 if your search starts from the beginning!
+}*/
 
 // The following will be our kernel's entry point.
 // If renaming _start() to something else, make sure to change the
@@ -144,6 +145,40 @@ void _start(void) {
     pic_init();
     init_idt();
     __asm__ volatile("sti"); // Set Interrupt Flag
+
+    limine_check();
+
+    printf("Initializing PMM...\n");
+    
+    pmm_init();               // 1. Setup the bitmap structure
+    pmm_init_free_regions();  // 2. Mark Usable RAM as free in the bitmap
+
+    lock_bitmap();
+
+    // Get physical address by subtracting the offset
+    printf("PMM Ready. Testing allocation...\n");
+    
+    // 4. THE TEST
+    uint64_t page1 = pmm_alloc();
+    uint64_t page2 = pmm_alloc();
+    
+    printf("Page 1: %x\n", page1);
+    printf("Page 2: %x\n", page2);
+
+    //vmm_init(); // Switch to our own page tables
+
+    uint64_t phys = pmm_alloc();
+    uint64_t virt = 0x1234567000;
+
+    // Use the global kernel_pml4 we just set up
+    //vmm_map(kernel_pml4, virt, phys, PTE_PRESENT | PTE_WRITABLE);
+
+    /*uint64_t* ptr = (uint64_t*)virt;
+    *ptr = 0xABCDE;
+
+    if (*ptr == 0xABCDE) {
+        printf("Success! Virtual address %x is live.\n", virt);
+    }*/
     printf(">");
     kmain();
     // We're done, just hang...

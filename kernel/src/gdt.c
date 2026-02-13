@@ -4,7 +4,6 @@
 #include <flanterm/backends/fb.h>
 #include "printf.h"
 #include "kernel.h"
-#include "main.h"
 #include "gdt.h"
 
 struct gdt_entry gdt[3];

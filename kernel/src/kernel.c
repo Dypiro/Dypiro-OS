@@ -5,7 +5,6 @@
 #include "printf.h"
 #include "kernel.h"
 #include "keyboard.h"
-#include "main.h"
 //#include "io.h"
 #define pass (void)0
 #define MAX_COMMAND_LEN 128
@@ -97,7 +96,7 @@ void shell_input(char c) {
 
 void execute_command(char* input) {
     if (strcmp(input, "help")) {
-        printf("\nAvailable commands: help, clear, ticks, sleep");
+        printf("\nAvailable commands: help, clear, count, echo, sleep");
     } 
     else if (strcmp(input, "clear")) {
         // If you have a clear screen function, call it here
