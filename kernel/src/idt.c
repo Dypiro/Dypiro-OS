@@ -51,7 +51,7 @@ void init_idt() {
     printf("IDT Loaded. Keyboard Handler at: %p\n", keyboard_handler_asm);
 }
 
-// A struct that matches the order of your 'push' instructions
+// A struct that matches the orderofy the 'push' instructions
 struct registers {
     uint64_t r11, r10, r9, r8, rdi, rsi, rdx, rcx, rax;
     uint64_t int_no, err_code;
