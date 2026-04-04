@@ -31,6 +31,16 @@ void keyboard_handler_c() {
     }
 }
 
+uint64_t ticks = 0;
+
+void timer_handler_c() {
+    ticks++;
+    if (ticks == target_ticks) {
+       printf("\ncount target reached!\n>");
+    }
+}
+
+
 // Simple string-to-int conversion
 int simple_atoi(char* str) {
     int res = 0;
@@ -39,15 +49,6 @@ int simple_atoi(char* str) {
         res = res * 10 + str[i] - '0';
     }
     return res;
-}
-
-uint64_t ticks = 0;
-
-void timer_handler_c() {
-    ticks++;
-    if (ticks == target_ticks) {
-       printf("\ncount target reached!\n>");
-    }
 }
 
 int strcmp(const char *str1, const char *str2) {

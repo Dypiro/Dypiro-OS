@@ -165,20 +165,20 @@ void _start(void) {
     printf("Page 1: %x\n", page1);
     printf("Page 2: %x\n", page2);
 
-    //vmm_init(); // Switch to our own page tables
+    vmm_init(); // Switch to our own page tables
 
     uint64_t phys = pmm_alloc();
     uint64_t virt = 0x1234567000;
 
     // Use the global kernel_pml4 we just set up
-    //vmm_map(kernel_pml4, virt, phys, PTE_PRESENT | PTE_WRITABLE);
+    vmm_map(kernel_pml4, virt, phys, PTE_PRESENT | PTE_WRITABLE);
 
-    /*uint64_t* ptr = (uint64_t*)virt;
+    uint64_t* ptr = (uint64_t*)virt;
     *ptr = 0xABCDE;
 
     if (*ptr == 0xABCDE) {
         printf("Success! Virtual address %x is live.\n", virt);
-    }*/
+    }
     printf(">");
     kmain();
     // We're done, just hang...

@@ -44,7 +44,7 @@ void *memset(void *s, int c, size_t n) {
 
 void pmm_init() {
     struct limine_memmap_response *map = memmap_request.response;
-    uint64_t hhdm_offset = hhdm_request.response->offset;
+    hhdm_offset = hhdm_request.response->offset;
     uint64_t highest_addr = 0;
 
     // 1. Find the top of RAM
