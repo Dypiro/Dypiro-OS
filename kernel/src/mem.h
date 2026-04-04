@@ -16,6 +16,7 @@
 #define PTE_USER     (1ULL << 2)   // Bit 2: Can user-mode code touch it?
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL // Used to strip flags and get address
 
+
 void *memset(void *s, int c, size_t n);
 
 //We need to know where the current active page table is.
@@ -42,3 +43,4 @@ void limine_check();
 void vmm_init();
 void vmm_map(uint64_t* pml4, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
 pt_entry* vmm_get_pte(uint64_t* pml4, uint64_t virt_addr, bool allocate);
+void* kmalloc(uint64_t size);
