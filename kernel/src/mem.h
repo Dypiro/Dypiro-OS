@@ -27,6 +27,7 @@ static inline uint64_t read_cr3(void) {
 }
 
 extern uint64_t* kernel_pml4;
+extern uint64_t hhdm_offset;
 
 //uint64_t phys_pml4;
 typedef uint64_t pt_entry;
