@@ -11,6 +11,17 @@ uint64_t  total_pages = 0; // Calculated in pmm_init, used in pmm_alloc
 uint64_t  bitmap_size = 0; // Needed to know how much to memset/lock
 uint64_t* kernel_pml4 = NULL;
 
+#define HEAP_START 0xffffa00000000000
+uint64_t heap_ptr = HEAP_START;        // The "Bump" pointer
+uint64_t heap_mapped_limit = HEAP_START; // How far we've actually mapped with vmm_map
+
+typedef struct malloc_header {
+    uint64_t size;
+    struct malloc_header* next;
+    bool free;
+} malloc_header_t;
+
+#define HEADER_SIZE sizeof(malloc_header_t)
 
 // You'll need your limine.h header for this
 // Use 'volatile' to prevent the compiler from getting 'clever'
@@ -216,4 +227,38 @@ void vmm_init() {
     asm volatile("mov %0, %%cr3" : : "r"(phys_pml4) : "memory");
     
     printf("VMM: Switched to new PML4 at physical %x\n", phys_pml4);
+}
+
+
+
+void* kmalloc(uint64_t size) {
+    // 1. Align the size to 16 bytes for CPU efficiency (SSE/AVX likes this)
+    size = (size + 15) & ~15;
+
+    void* allocated_addr = (void*)heap_ptr;
+    uint64_t next_ptr = heap_ptr + size;
+
+    // 2. Do we need more physical memory?
+    while (next_ptr > heap_mapped_limit) {
+        uint64_t new_page_phys = pmm_alloc();
+        if (!new_page_phys) {
+            // Out of physical RAM! 
+            return NULL; 
+        }
+
+        // Map the new page into our virtual heap space
+        vmm_map(kernel_pml4, heap_mapped_limit, new_page_phys, PTE_PRESENT | PTE_WRITABLE);
+        
+        heap_mapped_limit += 4096;
+    }
+
+    // 3. "Bump" the pointer and return
+    heap_ptr = next_ptr;
+    return allocated_addr;
+}
+
+void kfree(void* ptr) {
+    // A true bump allocator cannot reclaim individual chunks.
+    // We just ignore the call.
+    (void)ptr;
 }

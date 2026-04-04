@@ -165,6 +165,21 @@ void _start(void) {
         framebuffer->pitch
     );
 
+    printf("Framebuffer remapped!\n");
+
+    void* p1 = kmalloc(128);
+    void* p2 = kmalloc(1024 * 10); // 10KB, should trigger multiple vmm_maps
+    void* p3 = kmalloc(16);
+
+    printf("Alloc 1 (128b): %p\n", p1);
+    printf("Alloc 2 (10kb): %p\n", p2);
+    printf("Alloc 3 (16b):  %p\n", p3);
+
+    // Try writing to them to ensure they are actually mapped!
+    memcpy(p1, "ABCDEFGHIJ", 11);
+
+    printf("Test string in heap: %s\n", (char*)p1);
+
     printf(">");
     kmain();
     // We're done, just hang...
