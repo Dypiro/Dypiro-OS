@@ -5,6 +5,7 @@ struct vfs_node;
 
 // 2. Define the function pointer type using the struct name
 typedef uint64_t (*vfs_read_t)(struct vfs_node* node, uint64_t offset, uint64_t size, uint8_t* buffer);
+typedef uint64_t (*vfs_write_t)(struct vfs_node* node, uint64_t offset, uint64_t size, const uint8_t* buffer);
 
 // 3. Define the actual struct using the typedef we just made
 typedef struct vfs_node {
@@ -15,9 +16,11 @@ typedef struct vfs_node {
     void* private_data;  
     
     vfs_read_t read;     // Now the compiler knows exactly what this is!
+    vfs_write_t write;
     struct vfs_node* next; 
 } vfs_node_t;
 
 // 4. Function prototypes
 void vfs_mount_tar(void* tar_address);
 vfs_node_t* vfs_open(const char* name);
+vfs_node_t* vfs_touch(const char* name, uint64_t initial_size);

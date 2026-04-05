@@ -173,24 +173,37 @@ void _start(void) {
     vfs_mount_tar(tar_addr);
 
     // Now you can find the file!
-    vfs_node_t* my_txt = vfs_open("hello.txt");
+    vfs_node_t* my_txt = vfs_open("bin/meh.txt");
 
-    if (my_txt != NULL) {
-        // 1. Allocate a buffer to hold the text + a null terminator
-        char* content = (char*)kmalloc(my_txt->size + 1);
-        
-        // 2. Use the VFS read function we defined
-        my_txt->read(my_txt, 0, my_txt->size, (uint8_t*)content);
-        
-        // 3. Null-terminate so we can print it safely
-        content[my_txt->size] = '\0';
-        
-        printf("File Found! Name: %s, Size: %d bytes\n", my_txt->name, my_txt->size);
-        printf("Content: %s\n", content);
-        
-        kfree(content);
-    } else {
-        printf("Error: Could not find hello.txt in VFS!\n");
+    if (my_txt) {
+        // 1. Read the original
+        char original[10];
+        my_txt->read(my_txt, 0, 3, (uint8_t*)original);
+        printf("Before: %s\n", original);
+
+        // 2. Write something new
+        const char* new_text = "no ";
+        my_txt->write(my_txt, 0, 3, (const uint8_t*)new_text);
+
+        // 3. Read again to verify
+        char updated[10];
+        my_txt->read(my_txt, 0, 3, (uint8_t*)updated);
+        printf("After: %s\n", updated);
+    }
+    // 1. Create a 64-byte empty file
+    vfs_node_t* my_new_file = vfs_touch("secret.txt", 64);
+
+    // 2. Write to it
+    const char* msg = "Hunter2";
+    my_new_file->write(my_new_file, 0, 7, (const uint8_t*)msg);
+
+    // 3. Try opening it normally via the VFS
+    vfs_node_t* lookup = vfs_open("secret.txt");
+    if (lookup) {
+        char buf[10];
+        lookup->read(lookup, 0, 7, (uint8_t*)buf);
+        buf[7] = '\0';
+        printf("New file says: %s\n", buf);
     }
     printf(">");
     kmain();
