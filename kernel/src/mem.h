@@ -44,3 +44,4 @@ void vmm_init();
 void vmm_map(uint64_t* pml4, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
 pt_entry* vmm_get_pte(uint64_t* pml4, uint64_t virt_addr, bool allocate);
 void* kmalloc(uint64_t size);
+void kfree(void* ptr);

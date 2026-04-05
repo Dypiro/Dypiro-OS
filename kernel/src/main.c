@@ -176,12 +176,45 @@ void _start(void) {
     printf("Alloc 3 (16b):  %p\n", p3);
 
     // Try writing to them to ensure they are actually mapped!
-    memcpy(p1, "ABCDEFGHIJ", 11);
+    memcpy(p1, "ABCDEFGHIJ", sizeof("ABCDEFGHIJ"));
 
     printf("Test string in heap: %s\n", (char*)p1);
+
+    printf("Freeing middle block (%p)...\n", p2);
+    kfree(p2);
+
+    void* p4 = kmalloc(1024 * 10);
+    printf("Newly allocated block:    %p\n", p4);
+
+    if (p4 == p2) {
+        printf("SUCCESS: Memory recycled perfectly! Although this probably indicates that something is wrong\n");
+    } else {
+        printf("FAILURE: Memory was not recycled. Check your free_list logic.\n");
+    }
+
+    kfree(p1);
+    printf("%s\n",p1);
+    void* p5 = kmalloc(128);
+
+    if (p5 == p1) {
+        printf("SUCCESS: Memory recycled perfectly!\n");
+    } else {
+        printf("FAILURE: Memory was not recycled. Check your free_list logic.\n");
+    }
 
     printf(">");
     kmain();
     // We're done, just hang...
     hcf();
 }
+
+/*
+example usage of kmalloc
+struct process* p = kmalloc(sizeof(struct process));
+
+struct node {
+    void* data;
+    struct node* next;
+};
+struct node* n = kmalloc(sizeof(struct node));
+*/

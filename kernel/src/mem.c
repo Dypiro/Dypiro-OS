@@ -22,6 +22,37 @@ typedef struct malloc_header {
 } malloc_header_t;
 
 #define HEADER_SIZE sizeof(malloc_header_t)
+#define NUM_CACHES (sizeof(kmalloc_caches) / sizeof(slab_cache_t))
+
+struct slab_cache;
+
+typedef struct slab_header {
+    uint32_t magic;                // Identifies if it's multiple pages allocated or nah
+    struct slab_header* next_slab; // Link to another page of the same slot size
+    struct slab_cache* parent_cache;// Uhh
+    void* free_list_head;          // Pointer to the first available slot in this page
+    uint32_t used_slots;           // How many are currently allocated
+    uint32_t total_slots;          // How many fit in this page
+    uint32_t slot_size;            // e.g., 32, 64, 128...
+} slab_header_t;
+
+typedef struct slab_cache{
+    uint32_t slot_size;
+    slab_header_t* partial_slabs; // Slabs with some space left
+    slab_header_t* full_slabs;    // Slabs that are 100% full
+    slab_header_t* empty_slabs;   // Slabs that are 100% free (ready to be returned to PMM)
+} slab_cache_t;
+
+// Standard kernel buckets
+slab_cache_t kmalloc_caches[] = {
+    {32, NULL, NULL, NULL},
+    {64, NULL, NULL, NULL},
+    {128, NULL, NULL, NULL},
+    {256, NULL, NULL, NULL},
+    {512, NULL, NULL, NULL},
+    {1024, NULL, NULL, NULL},
+    {2048, NULL, NULL, NULL}
+};
 
 // You'll need your limine.h header for this
 // Use 'volatile' to prevent the compiler from getting 'clever'
@@ -229,36 +260,166 @@ void vmm_init() {
     printf("VMM: Switched to new PML4 at physical %x\n", phys_pml4);
 }
 
+void init_new_slab(slab_cache_t* cache, void* page_start) {
+    slab_header_t* header = (slab_header_t*)page_start;
+    // THE MAGIC STAMP
+    header->magic = 0xCAFEBABE;
+    header->slot_size = cache->slot_size;
+    header->total_slots = (4096 - sizeof(slab_header_t)) / cache->slot_size;
+    header->used_slots = 0;
+    
+    // Start the free list right after the header
+    uint8_t* first_slot = (uint8_t*)page_start + sizeof(slab_header_t);
+    header->free_list_head = first_slot;
+
+    // Stitching: Each slot stores the address of the next slot
+    uint8_t* current = first_slot;
+    for (uint32_t i = 0; i < header->total_slots - 1; i++) {
+        uint8_t* next = current + cache->slot_size;
+        *(void**)current = next; // Write the "next" pointer into the current slot
+        current = next;
+    }
+    
+    // The last slot points to NULL
+    *(void**)current = NULL;
+
+    // Add this new slab to the cache's partial list
+    header->next_slab = cache->partial_slabs;
+    cache->partial_slabs = header;
+}
+
+void remove_slab_from_list(slab_header_t** list_head, slab_header_t* slab_to_remove) {
+    if (*list_head == NULL || slab_to_remove == NULL) return;
+
+    if (*list_head == slab_to_remove) {
+        *list_head = slab_to_remove->next_slab;
+        return;
+    }
+
+    slab_header_t* current = *list_head;
+    while (current->next_slab != NULL && current->next_slab != slab_to_remove) {
+        current = current->next_slab;
+    }
+
+    if (current->next_slab == slab_to_remove) {
+        current->next_slab = slab_to_remove->next_slab;
+    }
+}
+
+void move_slab_to_full(slab_cache_t* cache, slab_header_t* slab) {
+    // 1. Snip it out of the partial list
+    remove_slab_from_list(&cache->partial_slabs, slab);
+
+    // 2. Add it to the front of the full list
+    slab->next_slab = cache->full_slabs;
+    cache->full_slabs = slab;
+}
+
+void move_slab_to_partial(slab_cache_t* cache, slab_header_t* slab) {
+    // 1. Snip it out of the full list
+    remove_slab_from_list(&cache->full_slabs, slab);
+
+    // 2. Add it back to the partial list so kmalloc can see it
+    slab->next_slab = cache->partial_slabs;
+    cache->partial_slabs = slab;
+}
+
+void* slab_alloc(slab_cache_t* cache) {
+    if (cache->partial_slabs == NULL) {
+        // No room! Allocate a new page via your existing PMM/VMM
+        uint64_t new_page_phys = pmm_alloc();
+        void* new_page_virt = (void*)(new_page_phys + hhdm_offset); // Use HHDM for metadata
+        
+        // Setup the header and link the slots...
+        init_new_slab(cache, new_page_virt);
+    }
+    
+    slab_header_t* slab = cache->partial_slabs;
+    void* slot = slab->free_list_head;
+    
+    // The "Next" pointer is literally stored INSIDE the free slot itself
+    slab->free_list_head = *(void**)slot; 
+    slab->used_slots++;
+    
+    // If full, move to full_slabs list
+    if (slab->used_slots == slab->total_slots) {
+        move_slab_to_full(cache, slab);
+    }
+    
+    return slot;
+}
 
 
 void* kmalloc(uint64_t size) {
-    // 1. Align the size to 16 bytes for CPU efficiency (SSE/AVX likes this)
-    size = (size + 15) & ~15;
+    if (size == 0) return NULL;
 
-    void* allocated_addr = (void*)heap_ptr;
-    uint64_t next_ptr = heap_ptr + size;
-
-    // 2. Do we need more physical memory?
-    while (next_ptr > heap_mapped_limit) {
-        uint64_t new_page_phys = pmm_alloc();
-        if (!new_page_phys) {
-            // Out of physical RAM! 
-            return NULL; 
-        }
-
-        // Map the new page into our virtual heap space
-        vmm_map(kernel_pml4, heap_mapped_limit, new_page_phys, PTE_PRESENT | PTE_WRITABLE);
+    // --- CASE A: Large Allocations (> 2048 bytes) ---
+    if (size > 2048) {
+        // Calculate how many 4KB pages we need
+        uint64_t pages_needed = (size + 4095) / 4096;
         
-        heap_mapped_limit += 4096;
+        // Use our VMM/PMM to find a hole in the heap and map it
+        // We can reuse your 'heap_ptr' logic from the Bump allocator here!
+        void* ptr = (void*)heap_ptr;
+        
+        for (uint64_t i = 0; i < pages_needed; i++) {
+            uint64_t phys = pmm_alloc();
+            vmm_map(kernel_pml4, heap_ptr, phys, PTE_PRESENT | PTE_WRITABLE);
+            heap_ptr += 4096;
+        }
+        return ptr;
     }
 
-    // 3. "Bump" the pointer and return
-    heap_ptr = next_ptr;
-    return allocated_addr;
+    // --- CASE B: Small Allocations (Slabs) ---
+    for (int i = 0; i < NUM_CACHES; i++) {
+        if (size <= kmalloc_caches[i].slot_size) {
+            return slab_alloc(&kmalloc_caches[i]);
+        }
+    }
+
+    return NULL;
 }
 
 void kfree(void* ptr) {
-    // A true bump allocator cannot reclaim individual chunks.
-    // We just ignore the call.
-    (void)ptr;
+    // 1. Safety first: freeing NULL is a no-op in C
+    if (ptr == NULL) return;
+
+    // 2. Find the start of the 4KB page this pointer lives in.
+    // Since all our pages are 4KB aligned, we just mask off the last 12 bits.
+    slab_header_t* header = (slab_header_t*)((uintptr_t)ptr & ~0xfff);
+
+    // 3. Check the "ID Card" (The Magic Number)
+    if (header->magic == 0xCAFEBABE) {
+        // --- THIS IS A SLAB ALLOCATION ---
+        
+        slab_cache_t* cache = header->parent_cache;
+        
+        // Was this slab previously full? (If so, we need to move it back to 'partial')
+        bool was_full = (header->used_slots == header->total_slots);
+
+        // Standard Linked List "Push":
+        // We write the current 'free_list_head' INTO the memory we are freeing.
+        // Then we make this memory the NEW 'free_list_head'.
+        *(void**)ptr = header->free_list_head;
+        header->free_list_head = ptr;
+
+        header->used_slots--;
+
+        // If the slab was full, it's now useful for kmalloc again. 
+        // Move it from the 'full' list to the 'partial' list.
+        if (was_full && cache != NULL) {
+            move_slab_to_partial(cache, header);
+        }
+
+        // Optional: If used_slots is 0, you could move it to an 'empty' list 
+        // or pmm_free the page. For now, keeping it in 'partial' is fine.
+        
+    } else {
+        // --- THIS IS A LARGE PAGE ALLOCATION ---
+        
+        // For your 10KB test, the memory was allocated via the "Bump" logic.
+        // To truly free this, you'd need to know how many pages to pmm_free.
+        // For now, we print a message so we don't Triple Fault.
+        printf("kfree: Large allocation at %p ignored (Direct Page)\n", ptr);
+    }
 }
