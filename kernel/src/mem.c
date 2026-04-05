@@ -51,10 +51,14 @@ slab_cache_t kmalloc_caches[] = {
     {256, NULL, NULL, NULL},
     {512, NULL, NULL, NULL},
     {1024, NULL, NULL, NULL},
-    {2048, NULL, NULL, NULL}
+    {2048, NULL, NULL, NULL},
+    {4096,  NULL, NULL}, // 1 Page
+    {8192,  NULL, NULL}, // 2 Pages
+    {16384, NULL, NULL}, // 4 Pages
+    {10240, NULL, NULL}  // 10 Pages (why) also btw equivalent to 10Kb of RAM which is more than enough, if you need more then you're mentally ill
 };
 
-// You'll need your limine.h header for this
+// You'll need the limine.h header for this
 // Use 'volatile' to prevent the compiler from getting 'clever'
 volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST,
@@ -264,8 +268,25 @@ void init_new_slab(slab_cache_t* cache, void* page_start) {
     slab_header_t* header = (slab_header_t*)page_start;
     // THE MAGIC STAMP
     header->magic = 0xCAFEBABE;
+    header->parent_cache = cache;
     header->slot_size = cache->slot_size;
-    header->total_slots = (4096 - sizeof(slab_header_t)) / cache->slot_size;
+    
+    // How many 4KB pages does ONE slot need?
+    uint64_t pages_per_slab = (cache->slot_size > 4096) ? (cache->slot_size / 4096) : 1;
+    
+    // For simplicity in a multi-page bucket, we'll just put ONE slot per slab
+    // if the size is > 2048. This avoids complex "spanning" logic.
+    if (cache->slot_size > 2048) {
+        header->total_slots = 1;
+        // Map the extra pages needed for this one big slot
+        for (uint64_t i = 1; i < pages_per_slab; i++) {
+            uint64_t phys = pmm_alloc();
+            vmm_map(kernel_pml4, (uintptr_t)page_start + (i * 4096), phys, PTE_PRESENT | PTE_WRITABLE);
+        }
+    } else {
+        header->total_slots = (4096 - sizeof(slab_header_t)) / cache->slot_size;
+    }
+
     header->used_slots = 0;
     
     // Start the free list right after the header
@@ -351,75 +372,26 @@ void* slab_alloc(slab_cache_t* cache) {
 
 
 void* kmalloc(uint64_t size) {
-    if (size == 0) return NULL;
-
-    // --- CASE A: Large Allocations (> 2048 bytes) ---
-    if (size > 2048) {
-        // Calculate how many 4KB pages we need
-        uint64_t pages_needed = (size + 4095) / 4096;
-        
-        // Use our VMM/PMM to find a hole in the heap and map it
-        // We can reuse your 'heap_ptr' logic from the Bump allocator here!
-        void* ptr = (void*)heap_ptr;
-        
-        for (uint64_t i = 0; i < pages_needed; i++) {
-            uint64_t phys = pmm_alloc();
-            vmm_map(kernel_pml4, heap_ptr, phys, PTE_PRESENT | PTE_WRITABLE);
-            heap_ptr += 4096;
-        }
-        return ptr;
-    }
-
-    // --- CASE B: Small Allocations (Slabs) ---
     for (int i = 0; i < NUM_CACHES; i++) {
         if (size <= kmalloc_caches[i].slot_size) {
             return slab_alloc(&kmalloc_caches[i]);
         }
     }
-
+    printf("KMALLOC: Request %d too large for any bucket!\n", size);
     return NULL;
 }
 
 void kfree(void* ptr) {
-    // 1. Safety first: freeing NULL is a no-op in C
-    if (ptr == NULL) return;
-
-    // 2. Find the start of the 4KB page this pointer lives in.
-    // Since all our pages are 4KB aligned, we just mask off the last 12 bits.
-    slab_header_t* header = (slab_header_t*)((uintptr_t)ptr & ~0xfff);
-
-    // 3. Check the "ID Card" (The Magic Number)
-    if (header->magic == 0xCAFEBABE) {
-        // --- THIS IS A SLAB ALLOCATION ---
-        
-        slab_cache_t* cache = header->parent_cache;
-        
-        // Was this slab previously full? (If so, we need to move it back to 'partial')
-        bool was_full = (header->used_slots == header->total_slots);
-
-        // Standard Linked List "Push":
-        // We write the current 'free_list_head' INTO the memory we are freeing.
-        // Then we make this memory the NEW 'free_list_head'.
-        *(void**)ptr = header->free_list_head;
-        header->free_list_head = ptr;
-
-        header->used_slots--;
-
-        // If the slab was full, it's now useful for kmalloc again. 
-        // Move it from the 'full' list to the 'partial' list.
-        if (was_full && cache != NULL) {
-            move_slab_to_partial(cache, header);
+    if (!ptr) return;
+    slab_header_t* slab = (slab_header_t*)((uintptr_t)ptr & ~0xFFF);
+    
+    if (slab->magic == 0xCAFEBABE) {
+        // Normal slab recycling logic
+        *(void**)ptr = slab->free_list_head;
+        slab->free_list_head = ptr;
+        slab->used_slots--;
+        if (slab->used_slots == slab->total_slots - 1) {
+            move_slab_to_partial(slab->parent_cache, slab);
         }
-
-        // Optional: If used_slots is 0, you could move it to an 'empty' list 
-        // or pmm_free the page. For now, keeping it in 'partial' is fine.
-        
-    } else {
-        // --- THIS IS A LARGE PAGE ALLOCATION ---
-        
-        // For your 10KB test, the memory was allocated via the "Bump" logic.
-        // To truly free this, you'd need to know how many pages to pmm_free.
-        // For now, we print a message so we don't Triple Fault.
-        printf("kfree: Large allocation at %p ignored (Direct Page)\n", ptr);
     }
 }

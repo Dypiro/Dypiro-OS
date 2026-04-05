@@ -16,6 +16,8 @@
 #define PTE_USER     (1ULL << 2)   // Bit 2: Can user-mode code touch it?
 #define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL // Used to strip flags and get address
 
+#define MAX_BUCKETS 20  // More than enough for 32b -> 1MB
+
 
 void *memset(void *s, int c, size_t n);
 

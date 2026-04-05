@@ -5,7 +5,7 @@
 #include "printf.h"
 #include "kernel.h"
 #include "keyboard.h"
-//#include "io.h"
+#include "mem.h"
 #define pass (void)0
 #define MAX_COMMAND_LEN 128
 
@@ -59,7 +59,6 @@ int strcmp(const char *str1, const char *str2) {
     return (*str1 == *str2) ? 1 : 0;
 }
 
-
 int strncmp(const char *cs, const char *ct, size_t count)
 {
 	unsigned char c1, c2;
@@ -76,28 +75,44 @@ int strncmp(const char *cs, const char *ct, size_t count)
 	return 0;
 }
 
+// We'll keep a pointer instead of an array
+char* cmd = NULL; 
+
 void shell_input(char c) {
+    // 1. If we don't have a buffer yet, grab one from the Slab
+    if (cmd == NULL) {
+        cmd = (char*)kmalloc(MAX_COMMAND_LEN);
+        if (!cmd) return; // Out of memory!
+    }
+
     if (c == '\n') {
-        shell_buffer[buffer_idx] = '\0'; // Null-terminate the string
-        execute_command(shell_buffer);
-        buffer_idx = 0;                  // Reset buffer
+        cmd[buffer_idx] = '\0';
+        
+        // Pass the heap pointer directly to your executor
+        execute_command(cmd);
+
+        // 2. The command is done. Free the memory and reset.
+        kfree(cmd);
+        cmd = NULL; 
+        buffer_idx = 0;
+        
         printf("\n>");
     } 
     else if (c == '\b') {
         if (buffer_idx > 0) {
             buffer_idx--;
-            printf("\b \b"); // Backspace, space (to clear), Backspace
+            printf("\b \b");
         }
     } 
     else if (buffer_idx < MAX_COMMAND_LEN - 1) {
-        shell_buffer[buffer_idx++] = c;
-        printf("%c", c); // Echo the character back to the user
+        cmd[buffer_idx++] = c;
+        printf("%c", c);
     }
 }
 
 void execute_command(char* input) {
     if (strcmp(input, "help")) {
-        printf("\nAvailable commands: help, clear, count, echo, sleep");
+        printf("\nAvailable commands: help, clear, count, echo");
     } 
     else if (strcmp(input, "clear")) {
         // If you have a clear screen function, call it here
