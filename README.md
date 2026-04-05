@@ -14,4 +14,9 @@ $ make run
 ```bash
 $ qemu-system-x86_64 -M q35 -m 2G -d int -no-reboot -cdrom Dypiro-os.iso -boot d
 ```
+## Repack the tar file
+```bash
+$ tar -cvf initrd.tar -C initrd .
+```
+
 Precompiled iso included

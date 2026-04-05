@@ -10,6 +10,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "mem.h"
+#include "vfs.h"
 
 
 // Define where we want the framebuffer to live in our virtual memory
@@ -28,7 +29,10 @@ extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 
 
-
+static volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST,
+    .revision = 0
+};
 
 
 struct flanterm_context *ft_ctx;
@@ -45,54 +49,6 @@ static volatile struct limine_framebuffer_request framebuffer_request = {
 // the compiler does not optimise them away, so, usually, they should
 // be made volatile or equivalent, _and_ they should be accessed at least
 // once.
-
-
-// GCC and Clang reserve the right to generate calls to the following
-// 4 functions even if they are not directly called.
-// Implement them as the C specification mandates.
-// DO NOT remove or rename these functions, or stuff will eventually break!
-// They CAN be moved to a different .c file.
-
-void *memcpy(void *dest, const void *src, size_t n) {
-    uint8_t *pdest = (uint8_t *)dest;
-    const uint8_t *psrc = (const uint8_t *)src;
-
-    for (size_t i = 0; i < n; i++) {
-        pdest[i] = psrc[i];
-    }
-
-    return dest;
-}
-
-void *memmove(void *dest, const void *src, size_t n) {
-    uint8_t *pdest = (uint8_t *)dest;
-    const uint8_t *psrc = (const uint8_t *)src;
-
-    if (src > dest) {
-        for (size_t i = 0; i < n; i++) {
-            pdest[i] = psrc[i];
-        }
-    } else if (src < dest) {
-        for (size_t i = n; i > 0; i--) {
-            pdest[i-1] = psrc[i-1];
-        }
-    }
-
-    return dest;
-}
-
-int memcmp(const void *s1, const void *s2, size_t n) {
-    const uint8_t *p1 = (const uint8_t *)s1;
-    const uint8_t *p2 = (const uint8_t *)s2;
-
-    for (size_t i = 0; i < n; i++) {
-        if (p1[i] != p2[i]) {
-            return p1[i] < p2[i] ? -1 : 1;
-        }
-    }
-
-    return 0;
-}
 
 // Halt and catch fire function.
 static void hcf(void) {
@@ -149,7 +105,7 @@ void _start(void) {
     // We loop page-by-page (4096 bytes)
     for (uint64_t i = 0; i < fb_size_bytes; i += 4096) {
         vmm_map(
-            kernel_pml4,           // Your new PML4
+            kernel_pml4,           // The new PML4
             VIDEO_VIRT_BASE + i,   // Our chosen Virtual Address
             fb_phys + i,           // The actual Physical hardware address
             PTE_PRESENT | PTE_WRITABLE
@@ -167,7 +123,7 @@ void _start(void) {
 
     printf("Framebuffer remapped!\n");
 
-    void* p1 = kmalloc(128);
+    /*void* p1 = kmalloc(128);
     void* p2 = kmalloc(1024 * 10); // 10KB, should trigger multiple vmm_maps
     void* p3 = kmalloc(16);
 
@@ -200,8 +156,42 @@ void _start(void) {
         printf("SUCCESS: Memory recycled perfectly!\n");
     } else {
         printf("FAILURE: Memory was not recycled. Check your free_list logic.\n");
+    }*/
+    if (module_request.response == NULL || module_request.response->module_count < 1) {
+        // Halt or Error: No modules found!
+        hcf(); 
     }
 
+    // 2. Grab the first module (our TAR)
+    struct limine_file* tar_module = module_request.response->modules[0];
+
+    // 3. Get the pointer and size
+    void* tar_addr = tar_module->address;
+    uint64_t tar_size = tar_module->size;
+
+    // 4. Pass it to the VFS we built earlier
+    vfs_mount_tar(tar_addr);
+
+    // Now you can find the file!
+    vfs_node_t* my_txt = vfs_open("hello.txt");
+
+    if (my_txt != NULL) {
+        // 1. Allocate a buffer to hold the text + a null terminator
+        char* content = (char*)kmalloc(my_txt->size + 1);
+        
+        // 2. Use the VFS read function we defined
+        my_txt->read(my_txt, 0, my_txt->size, (uint8_t*)content);
+        
+        // 3. Null-terminate so we can print it safely
+        content[my_txt->size] = '\0';
+        
+        printf("File Found! Name: %s, Size: %d bytes\n", my_txt->name, my_txt->size);
+        printf("Content: %s\n", content);
+        
+        kfree(content);
+    } else {
+        printf("Error: Could not find hello.txt in VFS!\n");
+    }
     printf(">");
     kmain();
     // We're done, just hang...

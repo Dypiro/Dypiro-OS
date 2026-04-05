@@ -47,3 +47,5 @@ void vmm_map(uint64_t* pml4, uint64_t virt_addr, uint64_t phys_addr, uint64_t fl
 pt_entry* vmm_get_pte(uint64_t* pml4, uint64_t virt_addr, bool allocate);
 void* kmalloc(uint64_t size);
 void kfree(void* ptr);
+void *memcpy(void *dest, const void *src, size_t n);
+int memcmp(const void *s1, const void *s2, size_t n);
