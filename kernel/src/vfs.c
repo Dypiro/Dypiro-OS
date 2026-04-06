@@ -145,17 +145,40 @@ vfs_node_t* vfs_touch(const char* name, uint64_t initial_size) {
     return new_node;
 }
 
-void vfs_ls() {
+void vfs_ls(const char* filter) {
     vfs_node_t* curr = root_fs;
-    printf("Type  Size       Name\n");
-    printf("--------------------------\n");
-    
-    while (curr) {
-        // [F] for File, [D] for Directory (if you add them later)
-        char type_char = (curr->type == VFS_DIRECTORY) ? 'D' : 'F';
-        
-        printf("[%c]   %d bytes    %s\n", type_char, curr->size, curr->name);
-        
+    char last_dir[256] = {0}; // Track what we just printed
+
+    while (curr != NULL) {
+        const char* name = curr->name;
+        if (name[0] == '.' && name[1] == '/') name += 2;
+
+        // 1. Filter logic (same as before)
+        if (filter && strlen(filter) > 0) {
+            if (strncmp(name, filter, strlen(filter)) != 0) {
+                curr = curr->next;
+                continue;
+            }
+            name += strlen(filter);
+            if (name[0] == '/') name++;
+        }
+
+        // 2. Directory vs File logic
+        char* next_slash = strchr(name, '/');
+        if (next_slash == NULL) {
+            // It's a file: Print it!
+            printf("  %s\n", name);
+        } else {
+            // It's a directory: Only print if it's not the same as the last one
+            int dir_len = next_slash - name;
+            if (strncmp(last_dir, name, dir_len) != 0 || last_dir[dir_len] != '\0') {
+                printf("  %.*s/\n", dir_len, name);
+                
+                // Update last_dir
+                strncpy(last_dir, name, dir_len);
+                last_dir[dir_len] = '\0';
+            }
+        }
         curr = curr->next;
     }
 }

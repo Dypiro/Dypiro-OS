@@ -59,6 +59,10 @@ int strcmp(const char* s1, const char* s2) {
     }
     return *(const unsigned char*)s1 - *(const unsigned char*)s2;
 }
+char* strchr(const char* s, int c) {
+    while (*s != (char)c) if (!*s++) return 0;
+    return (char*)s;
+}
 
 int strncmp(const char *cs, const char *ct, size_t count)
 {
@@ -115,8 +119,16 @@ void shell_input(char c) {
 }
 
 void execute_command(char* input) {
+
+    char* arg = strchr(input, ' ');
+    if (arg) {
+        *arg = '\0'; // Terminate the command string
+        arg++;       // Move to the start of the argument
+        while (*arg == ' ') arg++; // Clean up spaces
+    }
     if (strcmp(input, "help") == 0) {
         printf("\nAvailable commands: help, clear, count, echo, ticks, ls, read, write [file] [content], touch, size (set size for creating a file)");
+        printf("\nNote: most vfs commands should be RAM only to prevent damage if ran on a real machine");
     } 
     else if (strcmp(input, "clear") == 0) {
         // If you have a clear screen function, call it here
@@ -126,10 +138,10 @@ void execute_command(char* input) {
         printf("\nCurrent system ticks: %d", (int)ticks);
     } 
 
-    else if (strcmp(input, "ls") == 0) {
+    else if ((strcmp(input, "ls") == 0) | (strncmp(input, "ls",2) == 0)) {
         printf("\n");
-        vfs_ls();
-    } 
+        vfs_ls(arg);
+    }
     else if (strncmp(input, "read ", 5) == 0) {
         char* filename = input + 5;
         vfs_node_t* node = vfs_open(filename);
