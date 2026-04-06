@@ -64,6 +64,10 @@ char* strchr(const char* s, int c) {
     return (char*)s;
 }
 
+// Source - https://stackoverflow.com/a/32567419
+// Posted by DevSolar, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-04-06, License - CC BY-SA 4.0
+
 int strncmp(const char *cs, const char *ct, size_t count)
 {
 	unsigned char c1, c2;
@@ -79,6 +83,7 @@ int strncmp(const char *cs, const char *ct, size_t count)
 	}
 	return 0;
 }
+
 
 // We'll keep a pointer instead of an array
 char* cmd = NULL; 
@@ -138,11 +143,11 @@ void execute_command(char* input) {
         printf("\nCurrent system ticks: %d", (int)ticks);
     } 
 
-    else if ((strcmp(input, "ls") == 0) | (strncmp(input, "ls",2) == 0)) {
+    else if ((strcmp(input, "ls") == 0)) {
         printf("\n");
         vfs_ls(arg);
     }
-    else if (strncmp(input, "read ", 5) == 0) {
+    else if (strcmp(input, "read") == 0) {
         char* filename = input + 5;
         vfs_node_t* node = vfs_open(filename);
         if (node) {
@@ -156,12 +161,12 @@ void execute_command(char* input) {
             printf("\nFile not found.\n");
         }
     }
-    else if (strncmp(input, "touch ", 6) == 0) {
+    else if (strcmp(input, "touch") == 0) {
         char* filename = input + 6;
         vfs_touch(filename, *size);
         printf("\nCreated file %s\n",filename);
     }
-    else if (strncmp(input, "write ", 6) == 0) {
+    else if (strcmp(input, "write") == 0) {
         printf("\n");
         char* filename = input + 6;
         char* content = NULL;
@@ -195,7 +200,7 @@ void execute_command(char* input) {
         }
     } 
     // SLEEP COMMAND: expects "sleep <ms>"
-    else if (strncmp(input, "count ", 6) == 0) {
+    else if (strcmp(input, "count") == 0) {
         int ms = simple_atoi(input + 6);    // Skip the "sleep " part
         if (ms > 0) {
             target_ticks = ticks + ms; // Assuming 1000Hz (1ms per tick)
@@ -203,11 +208,11 @@ void execute_command(char* input) {
         }
     }
     // ECHO COMMAND: expects "echo <message>"
-    else if (strncmp(input, "echo ", 5) == 0) {
+    else if (strcmp(input, "echo") == 0) {
         printf("\n%s", input + 5); // Jump 5 chars ahead to skip "echo "
     }
 
-    else if (strncmp(input, "size ", 5) == 0) {
+    else if (strcmp(input, "size") == 0) {
         if (simple_atoi(input + 5) <= 10240){
             *size = simple_atoi(input + 5); 
         }
