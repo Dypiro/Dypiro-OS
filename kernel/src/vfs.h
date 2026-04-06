@@ -15,8 +15,8 @@ typedef struct vfs_node {
     uint64_t inode;      
     void* private_data;  
     
-    vfs_read_t read;     // Now the compiler knows exactly what this is!
-    vfs_write_t write;
+    uint64_t (*read)(struct vfs_node*, uint64_t, uint64_t, uint8_t*);
+    uint64_t (*write)(struct vfs_node*, uint64_t, uint64_t, uint8_t*);
     struct vfs_node* next; 
 } vfs_node_t;
 
@@ -24,3 +24,4 @@ typedef struct vfs_node {
 void vfs_mount_tar(void* tar_address);
 vfs_node_t* vfs_open(const char* name);
 vfs_node_t* vfs_touch(const char* name, uint64_t initial_size);
+void vfs_ls();

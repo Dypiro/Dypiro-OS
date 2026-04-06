@@ -36,36 +36,31 @@ uint64_t tar_parse_octal(const char *in) {
 }
 
 // The actual read implementation for TAR files
-uint64_t tar_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buffer) {
-    if (offset >= node->size) return 0;
-    if (offset + size > node->size) size = node->size - offset;
+uint64_t vfs_read(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buffer) {
+    if (offset + size > node->size) {
+        size = node->size - offset; // Don't read past the end of the file
+    }
 
-    // In a TAR, node->private_data points to the start of the file data in RAM
+    // Copy from our internal storage (private_data) to the user's buffer
     memcpy(buffer, (uint8_t*)node->private_data + offset, size);
     return size;
 }
 
 
-uint64_t tar_write(vfs_node_t* node, uint64_t offset, uint64_t size, const uint8_t* buffer) {
-    if (offset >= node->size) return 0; // Out of bounds
-    
-    // Don't allow writing past the end of the existing file
+uint64_t vfs_tar_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buffer) {
     if (offset + size > node->size) {
-        size = node->size - offset;
+        size = node->size - offset; // Cannot expand a TAR entry!
     }
-
-    // private_data points to the file's start in the TAR RAM blob
     memcpy((uint8_t*)node->private_data + offset, buffer, size);
-    
     return size;
 }
 
-uint64_t ram_write(vfs_node_t* node, uint64_t offset, uint64_t size, const uint8_t* buffer) {
-    // For a simple version, we assume the buffer was pre-allocated
-    // In a pro VFS, you'd realloc() node->private_data if (offset + size > node->size)
-    
-    if (offset + size > node->size) return 0; // Simple guard for now
-
+uint64_t vfs_ram_write(vfs_node_t* node, uint64_t offset, uint64_t size, uint8_t* buffer) {
+    // Basic version: Still limited by initial kmalloc size.
+    // Advanced version: You would krealloc(node->private_data) if offset+size > node->size
+    if (offset + size > node->size) {
+        size = node->size - offset; 
+    }
     memcpy((uint8_t*)node->private_data + offset, buffer, size);
     return size;
 }
@@ -73,55 +68,94 @@ uint64_t ram_write(vfs_node_t* node, uint64_t offset, uint64_t size, const uint8
 void vfs_mount_tar(void* tar_address) {
     uint8_t* ptr = (uint8_t*)tar_address;
 
-    while (memcmp(ptr, "\0\0", 2) != 0) { // TAR ends with null blocks
-        vfs_node_t* node = kmalloc(sizeof(vfs_node_t));
+    while (memcmp(ptr, "\0\0", 2) != 0) {
+        char typeflag = *(char*)(ptr + 156);
         
-        // Populate node from TAR header
-        memcpy(node->name, ptr, 100);
+        vfs_node_t* node = kmalloc(sizeof(vfs_node_t));
+        strncpy(node->name, (char*)ptr, 100);
         node->size = tar_parse_octal((char*)(ptr + 124));
-        node->type = VFS_FILE;
-        node->private_data = (ptr + 512); // Data starts after header
-        node->read = tar_read;            // Assign our function pointer
-        node->write = tar_write;          // Assign the writer
+        
+        // CHECK THE TYPE
+        if (typeflag == '5') {
+            node->type = VFS_DIRECTORY;
+            node->private_data = NULL; // Directories have no raw data
+        } else {
+            node->type = VFS_FILE;
+            node->private_data = (ptr + 512);
+        }
 
-        // Link into our global list (simple flat VFS for now)
+        node->read = vfs_read;
+        node->write = vfs_tar_write;
+
         node->next = root_fs;
         root_fs = node;
 
-        // Move to next header: 512 (header) + size aligned to 512
         ptr += 512 + ((node->size + 511) & ~511);
     }
 }
 
 vfs_node_t* vfs_open(const char* name) {
     vfs_node_t* curr = root_fs;
-    while (curr) {
-        if (strcmp(curr->name, name) == 0) return curr;
+
+    while (curr != NULL) {
+        const char* vfs_name = curr->name;
+        const char* search_name = name;
+
+        // Skip the ./ prefix if it exists in VFS but not in user input
+        if (vfs_name[0] == '.' && vfs_name[1] == '/' && search_name[0] != '.') {
+            vfs_name += 2;
+        }
+
+        int result = strcmp(vfs_name, search_name);
+        
+        
+        //printf("\nVFS_DEBUG: Comparing '%s' to '%s' | Result: %d\n", vfs_name, search_name, result);
+
+        if (result == 0) {
+            //printf("\nVFS_DEBUG: Match Found!\n");
+            return curr;
+        }
+
         curr = curr->next;
     }
     return NULL;
 }
 
 vfs_node_t* vfs_touch(const char* name, uint64_t initial_size) {
-    // 1. Create the VFS header
     vfs_node_t* new_node = kmalloc(sizeof(vfs_node_t));
     
-    // 2. Setup metadata
+    // BAD: new_node->name = name; 
+    // (This just points to the shell's temporary command buffer!)
+
+    // GOOD: Copy the string into the node's own internal buffer
     strncpy(new_node->name, name, 255);
+    new_node->name[255] = '\0'; // Always null-terminate!
+
     new_node->type = VFS_FILE;
     new_node->size = initial_size;
-    
-    // 3. Allocate actual storage in RAM for this file
     new_node->private_data = kmalloc(initial_size);
-    memset(new_node->private_data, 0, initial_size); // Clear it
+    memset(new_node->private_data, 0, initial_size);
     
-    // 4. Assign functions (Use the RAM-friendly versions)
-    new_node->read = tar_read;   // tar_read actually works for RAM too!
-    new_node->write = ram_write; 
+    new_node->read = vfs_read;
+    new_node->write = vfs_ram_write;
     
-    // 5. Link it into the list so vfs_open can find it later
     new_node->next = root_fs;
     root_fs = new_node;
     
     return new_node;
+}
+
+void vfs_ls() {
+    vfs_node_t* curr = root_fs;
+    printf("Type  Size       Name\n");
+    printf("--------------------------\n");
+    
+    while (curr) {
+        // [F] for File, [D] for Directory (if you add them later)
+        char type_char = (curr->type == VFS_DIRECTORY) ? 'D' : 'F';
+        
+        printf("[%c]   %d bytes    %s\n", type_char, curr->size, curr->name);
+        
+        curr = curr->next;
+    }
 }
