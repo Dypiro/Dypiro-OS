@@ -168,43 +168,32 @@ void _start(void) {
     // 3. Get the pointer and size
     void* tar_addr = tar_module->address;
     uint64_t tar_size = tar_module->size;
-
-    // 4. Pass it to the VFS we built earlier
+    
+    // 4. Pass it to the VFS
     vfs_mount_tar(tar_addr);
 
-    // Now you can find the file!
-    vfs_node_t* my_txt = vfs_open("bin/meh.txt");
+    /*vfs_node_t* n1 = vfs_open("bin/meh.txt");
+    vfs_node_t* n2 = vfs_open("hello.txt");
 
-    if (my_txt) {
-        // 1. Read the original
-        char original[10];
-        my_txt->read(my_txt, 0, 3, (uint8_t*)original);
-        printf("Before: %s\n", original);
-
-        // 2. Write something new
-        const char* new_text = "no ";
-        my_txt->write(my_txt, 0, 3, (const uint8_t*)new_text);
-
-        // 3. Read again to verify
-        char updated[10];
-        my_txt->read(my_txt, 0, 3, (uint8_t*)updated);
-        printf("After: %s\n", updated);
+    if (n1 == n2) {
+        printf("BUG DETECTED: vfs_open returned the same pointer for both files!\n");
+    } else {
+        printf("Nodes are distinct. Checking data pointers...\n");
+        if (n1->private_data == n2->private_data) {
+            printf("BUG DETECTED: Both files point to the same memory: %p\n", n1->private_data);
+        }
     }
-    // 1. Create a 64-byte empty file
-    vfs_node_t* my_new_file = vfs_touch("secret.txt", 64);
-
-    // 2. Write to it
-    const char* msg = "Hunter2";
-    my_new_file->write(my_new_file, 0, 7, (const uint8_t*)msg);
-
-    // 3. Try opening it normally via the VFS
-    vfs_node_t* lookup = vfs_open("secret.txt");
-    if (lookup) {
-        char buf[10];
-        lookup->read(lookup, 0, 7, (uint8_t*)buf);
-        buf[7] = '\0';
-        printf("New file says: %s\n", buf);
+    if (n1) {
+        printf("N1 Found: %s\n", n1->name);
+    } else {
+        printf("N1 NOT FOUND in VFS!\n");
     }
+    if (n2) {
+        printf("N2 Found: %s\n", n2->name);
+    } else {
+        printf("N2 NOT FOUND in VFS!\n");
+    }*/
+
     printf(">");
     kmain();
     // We're done, just hang...

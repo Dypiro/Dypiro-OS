@@ -11,6 +11,12 @@
 // DO NOT remove or rename these functions, or stuff will eventually break!
 // They CAN be moved to a different .c file.
 
+size_t strlen(const char* str) {
+    size_t len = 0;
+    while (str[len]) len++;
+    return len;
+}
+
 void *memcpy(void *dest, const void *src, size_t n) {
     uint8_t *pdest = (uint8_t *)dest;
     const uint8_t *psrc = (const uint8_t *)src;

@@ -6,6 +6,7 @@
 #include "kernel.h"
 #include "keyboard.h"
 #include "mem.h"
+#include "vfs.h"
 #define pass (void)0
 #define MAX_COMMAND_LEN 128
 
@@ -51,12 +52,12 @@ int simple_atoi(char* str) {
     return res;
 }
 
-int strcmp(const char *str1, const char *str2) {
-    while (*str1 && (*str1 == *str2)) {
-        str1++;
-        str2++;
+int strcmp(const char* s1, const char* s2) {
+    while (*s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
     }
-    return (*str1 == *str2) ? 1 : 0;
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
 }
 
 int strncmp(const char *cs, const char *ct, size_t count)
@@ -77,18 +78,21 @@ int strncmp(const char *cs, const char *ct, size_t count)
 
 // We'll keep a pointer instead of an array
 char* cmd = NULL; 
-
+int* size = NULL;
 void shell_input(char c) {
     // 1. If we don't have a buffer yet, grab one from the Slab
     if (cmd == NULL) {
         cmd = (char*)kmalloc(MAX_COMMAND_LEN);
         if (!cmd) return; // Out of memory!
     }
+    if (size == NULL){
+        size = (int*)kmalloc(10240);
+    }
 
     if (c == '\n') {
         cmd[buffer_idx] = '\0';
         
-        // Pass the heap pointer directly to your executor
+        // Pass the heap pointer directly to the executor
         execute_command(cmd);
 
         // 2. The command is done. Free the memory and reset.
@@ -111,18 +115,75 @@ void shell_input(char c) {
 }
 
 void execute_command(char* input) {
-    if (strcmp(input, "help")) {
-        printf("\nAvailable commands: help, clear, count, echo");
+    if (strcmp(input, "help") == 0) {
+        printf("\nAvailable commands: help, clear, count, echo, ticks, ls, read, write [file] [content], touch, size (set size for creating a file)");
     } 
-    else if (strcmp(input, "clear")) {
+    else if (strcmp(input, "clear") == 0) {
         // If you have a clear screen function, call it here
         printf("\033[2J\033[H"); // Standard ANSI clear (if supported)
     } 
-    else if (strcmp(input, "ticks")) {
+    else if (strcmp(input, "ticks") == 0) {
         printf("\nCurrent system ticks: %d", (int)ticks);
     } 
+
+    else if (strcmp(input, "ls") == 0) {
+        printf("\n");
+        vfs_ls();
+    } 
+    else if (strncmp(input, "read ", 5) == 0) {
+        char* filename = input + 5;
+        vfs_node_t* node = vfs_open(filename);
+        if (node) {
+            // Temporarily allocate a buffer to read into
+            char* buf = kmalloc(node->size + 1);
+            node->read(node, 0, node->size, (uint8_t*)buf);
+            buf[node->size] = '\0'; 
+            printf("\n%s\n", buf);
+            kfree(buf);
+        } else {
+            printf("\nFile not found.\n");
+        }
+    }
+    else if (strncmp(input, "touch ", 6) == 0) {
+        char* filename = input + 6;
+        vfs_touch(filename, *size);
+        printf("\nCreated file %s\n",filename);
+    }
+    else if (strncmp(input, "write ", 6) == 0) {
+        printf("\n");
+        char* filename = input + 6;
+        char* content = NULL;
+
+        // Find the space between <filename> and <content>
+        for (int i = 0; filename[i] != '\0'; i++) {
+            if (filename[i] == ' ') {
+                filename[i] = '\0';      // Split the string
+                content = &filename[i+1]; // Content starts after the space
+                break;
+            }
+        }
+
+        if (content == NULL) {
+            printf("Usage: write <filename> <text>\n");
+            return;
+        }
+
+        vfs_node_t* node = vfs_open(filename);
+        if (node) {
+            uint64_t len = strlen(content);
+            uint64_t written = node->write(node, 0, len, (uint8_t*)content);
+            
+            if (written < len) {
+                printf("Warning: Only wrote %d/%d bytes (file too small?)\n", written, len);
+            } else {
+                printf("Successfully wrote to %s\n", filename);
+            }
+        } else {
+            printf("Error: File '%s' not found.\n", filename);
+        }
+    } 
     // SLEEP COMMAND: expects "sleep <ms>"
-    else if (strncmp(input, "count ", 6) == 0) { // Using your strncmp logic
+    else if (strncmp(input, "count ", 6) == 0) {
         int ms = simple_atoi(input + 6);    // Skip the "sleep " part
         if (ms > 0) {
             target_ticks = ticks + ms; // Assuming 1000Hz (1ms per tick)
@@ -134,6 +195,17 @@ void execute_command(char* input) {
         printf("\n%s", input + 5); // Jump 5 chars ahead to skip "echo "
     }
 
+    else if (strncmp(input, "size ", 5) == 0) {
+        if (simple_atoi(input + 5) <= 10240){
+            *size = simple_atoi(input + 5); 
+        }
+        else{
+            kfree(size);
+            size = (int*)kmalloc(10240); //prevent any overflows just in case
+            printf("\nCurrent size = %i\nCannot set size beyond 10240 bytes");
+        }
+
+    }
     else if (input[0] == '\0') {
         // Do nothing for empty enter
     }
