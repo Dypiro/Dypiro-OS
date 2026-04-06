@@ -147,6 +147,8 @@ vfs_node_t* vfs_touch(const char* name, uint64_t initial_size) {
 
 void vfs_ls(const char* filter) {
     vfs_node_t* curr = root_fs;
+    printf("Type  Size       Name\n");
+    printf("--------------------------\n");
     char last_dir[256] = {0}; // Track what we just printed
 
     while (curr != NULL) {
@@ -167,12 +169,12 @@ void vfs_ls(const char* filter) {
         char* next_slash = strchr(name, '/');
         if (next_slash == NULL) {
             // It's a file: Print it!
-            printf("  %s\n", name);
+            printf("[F]   %d bytes    %s\n", curr->size, name);
         } else {
             // It's a directory: Only print if it's not the same as the last one
             int dir_len = next_slash - name;
             if (strncmp(last_dir, name, dir_len) != 0 || last_dir[dir_len] != '\0') {
-                printf("  %.*s/\n", dir_len, name);
+                printf("[D]   %d bytes    %.*s/\n", curr->size, dir_len, name);
                 
                 // Update last_dir
                 strncpy(last_dir, name, dir_len);
