@@ -430,7 +430,7 @@ void* kmalloc(uint64_t size) {
             return slab_alloc(&kmalloc_caches[i]);
         }
     }
-    printf("KMALLOC: Request %d too large for any bucket!\n", size);
+    printf("\nKMALLOC: Request %d too large for any bucket!\n", size);
     return NULL;
 }
 

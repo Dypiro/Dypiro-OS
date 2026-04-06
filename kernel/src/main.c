@@ -194,6 +194,15 @@ void _start(void) {
         printf("N2 NOT FOUND in VFS!\n");
     }*/
 
+    /*uint64_t* demand_ptr = (uint64_t*)0x7000001000;
+
+    printf("Attempting access to unmapped memory...\n");
+
+    // This triggers the #PF, handler maps it, and returns here
+    *demand_ptr = 0x12345; 
+
+    printf("If you see this, Demand Paging worked! Value: %x\n", *demand_ptr);*/
+
     printf(">");
     kmain();
     // We're done, just hang...

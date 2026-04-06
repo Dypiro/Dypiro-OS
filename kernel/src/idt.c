@@ -8,8 +8,19 @@
 #include "printf.h"
 #include "gdt.h"
 #include "idt.h"
+#include "mem.h"
 //#include "io.h"
+
+// A struct that matches the order of the 'push' instructions
+struct registers {
+    uint64_t r11, r10, r9, r8, rdi, rsi, rdx, rcx, rax;
+    uint64_t int_no, err_code;
+    uint64_t rip, cs, rflags, rsp, ss; // Pushed by hardware
+};
+
+void page_fault_handler(struct registers* regs);
 extern void keyboard_handler_asm();
+extern void page_fault_handler_asm();
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 struct idt_entry idt[256];
@@ -42,6 +53,8 @@ void init_idt() {
     extern void timer_handler_asm();
     idt_set_gate(32, (uint64_t)timer_handler_asm);
 
+    idt_set_gate(14, (uint64_t)page_fault_handler_asm);
+
     // Update PIC mask to allow IRQ 0 AND IRQ 1
     write_port(0x21, 0xFC);
 
@@ -51,12 +64,6 @@ void init_idt() {
     printf("IDT Loaded. Keyboard Handler at: %p\n", keyboard_handler_asm);
 }
 
-// A struct that matches the orderofy the 'push' instructions
-struct registers {
-    uint64_t r11, r10, r9, r8, rdi, rsi, rdx, rcx, rax;
-    uint64_t int_no, err_code;
-    uint64_t rip, cs, rflags, rsp, ss; // Pushed by hardware
-};
 
 void irq_handler(struct registers* regs) {
     if (regs->int_no == 32) {
@@ -64,7 +71,45 @@ void irq_handler(struct registers* regs) {
     } else if (regs->int_no == 33) {
         keyboard_handler_c();
     }
-    
+    else if (regs->int_no == 14) { //page fault
+        page_fault_handler(regs);
+    }
+
     // EOI (End Of Interrupt)
     write_port(0x20, 0x20);
+}
+
+void page_fault_handler(struct registers* regs) {
+    printf("\nPAGE FAULT DETECTED\nATTEMPTING AUTOMATIC MAPPING");
+    uint64_t faulting_address;
+    __asm__ volatile("mov %%cr2, %0" : "=r" (faulting_address));
+
+    // Align address to page boundary
+    uint64_t aligned_addr = faulting_address & ~0xFFF;
+
+    // Check if the fault is "Not Present" (Bit 0 is 0)
+    if (!(regs->err_code & 0x1)) {
+        
+        /* LOGIC: Is this address supposed to be valid?
+           In a real OS, you'd check your process's VMAs here.
+           For a simple kernel test:
+        */
+        if (faulting_address >= 0x7000000000 && faulting_address < 0x8000000000) {
+            uint64_t new_frame = pmm_alloc();
+            if (new_frame) {
+                // Map the missing page using your existing VMM
+                vmm_map(kernel_pml4, aligned_addr, new_frame, PTE_PRESENT | PTE_WRITABLE);
+                
+                // Success! Return to the instruction that faulted.
+                // The CPU will retry the access and succeed this time.
+                return; 
+            }
+        }
+    }
+
+    // If we reach here, it's a genuine crash (e.g., NULL pointer or permission violation)
+    printf("\nFATAL ERROR: Unhandled Page Fault at %p | Error: %x | IP: %p\n", 
+            faulting_address, regs->err_code, regs->rip);
+    
+    for(;;) __asm__("hlt");
 }
