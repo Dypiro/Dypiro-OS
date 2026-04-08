@@ -28,6 +28,19 @@ uint8_t inb8(uint16_t port) {
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 
+void user_program() {
+    // Pick an address close to your stack (which we know works!)
+    // If stack is at 0x7FFFFFFF000, let's try 0x7FFFFEE000
+    uint64_t* ptr = (uint64_t*)0x7FFFFEE000; 
+    
+    // This SHOULD trigger a Page Fault (Not Present)
+    // Your handler should catch it, map it, and return here.
+    *ptr = 0xDEADC0DE; 
+
+    // If we reach this line, your OS is officially handling demand paging!
+    while(1); 
+}
+
 
 static volatile struct limine_module_request module_request = {
     .id = LIMINE_MODULE_REQUEST,
@@ -82,17 +95,17 @@ void _start(void) {
     framebuffer->address, framebuffer->width, framebuffer->height, framebuffer->pitch
     );
 
-    init_gdt();
-    pic_init();
-    init_idt();
-    __asm__ volatile("sti"); // Set Interrupt Flag
-
     pmm_init();               // Setup the bitmap structure
     pmm_init_free_regions();  // Mark Usable RAM as free in the bitmap
 
     lock_bitmap();
 
     vmm_init();
+
+    init_gdt();
+    pic_init();
+    init_idt();
+    __asm__ volatile("sti"); // Set Interrupt Flag
 
     // 2. Get the RAW Physical Address
     // Limine's address is Virtual (HHDM). We need Physical for vmm_map.
@@ -189,6 +202,8 @@ void _start(void) {
         printf("N1 NOT FOUND in VFS!\n");
     }
     if (n2) {
+    // 1. Get a physical frame for the code
+    uint64_t phys_code = pmm_alloc()
         printf("N2 Found: %s\n", n2->name);
     } else {
         printf("N2 NOT FOUND in VFS!\n");
@@ -202,6 +217,31 @@ void _start(void) {
     *demand_ptr = 0x12345; 
 
     printf("If you see this, Demand Paging worked! Value: %x\n", *demand_ptr);*/
+
+
+    // 1. Get a physical frame for the code
+    uint64_t phys_code = pmm_alloc();
+
+    // 2. Map it to a USER-space virtual address (Lower Half)
+    // IMPORTANT: Ensure PTE_USER (0x04) is passed!
+    uint64_t user_virt_rip = 0x400000; 
+    vmm_map(kernel_pml4, user_virt_rip, phys_code, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
+
+    // 3. Copy the function to that physical frame
+    // Since your kernel is in the higher half, you need your HHDM offset 
+    // to touch the physical memory directly.
+    uint8_t* destination = (uint8_t*)(phys_code + hhdm_offset);
+    memcpy(destination, user_program, 1024); // Copy the function code
+
+    // 4. Do the same for the stack
+    uint64_t phys_stack = pmm_alloc();
+    uint64_t user_virt_rsp = 0x7FFFFFFF000;
+    vmm_map(kernel_pml4, user_virt_rsp, phys_stack, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
+
+    // 5. JUMP!
+    test_user_entry(user_virt_rsp + 4096, user_virt_rip);
+
+
 
     printf(">");
     kmain();

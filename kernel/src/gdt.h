@@ -34,5 +34,7 @@ struct gdt_ptr {
 
 void init_gdt();
 extern void gdt_flush(uint64_t gdt_ptr_addr);
+void test_user_entry(uint64_t stack_ptr, uint64_t entry_ptr);
+
 
 #endif

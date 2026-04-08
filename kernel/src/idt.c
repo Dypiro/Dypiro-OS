@@ -104,11 +104,13 @@ void page_fault_handler(struct registers* regs) {
             uint64_t new_frame = pmm_alloc();
             if (new_frame) {
                 // Map the missing page using your existing VMM
-                vmm_map(kernel_pml4, aligned_addr, new_frame, PTE_PRESENT | PTE_WRITABLE);
+                vmm_map(kernel_pml4, aligned_addr, new_frame, PTE_PRESENT | PTE_WRITABLE | PTE_USER);
                 
                 // Success! Return to the instruction that faulted.
                 // The CPU will retry the access and succeed this time.
                 return; 
+            }else{
+                printf("Segmentation Fault (Core Dumped) at %p\n", faulting_address);
             }
         }
     }
