@@ -39,8 +39,15 @@ keyboard_handler_asm:
     push 0              ; Dummy error code
     push 33             ; Interrupt number
     jmp interrupt_common_stub
+
 global page_fault_handler_asm
 page_fault_handler_asm:
     ;CPU automatically pushes error code here
     push 14                 ; Push interrupt number
+    jmp interrupt_common_stub
+
+global double_fault_handler_asm
+double_fault_handler_asm:
+    ;CPU automatically pushes error code here
+    push 8                 ; Push interrupt number
     jmp interrupt_common_stub

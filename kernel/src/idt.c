@@ -19,8 +19,10 @@ struct registers {
 };
 
 void page_fault_handler(struct registers* regs);
+void double_fault_handler(struct registers* regs);
 extern void keyboard_handler_asm();
 extern void page_fault_handler_asm();
+extern void double_fault_handler_asm();
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 struct idt_entry idt[256];
@@ -55,6 +57,8 @@ void init_idt() {
 
     idt_set_gate(14, (uint64_t)page_fault_handler_asm);
 
+    idt_set_gate(10, (uint64_t)double_fault_handler_asm);
+
     // Update PIC mask to allow IRQ 0 AND IRQ 1
     write_port(0x21, 0xFC);
 
@@ -74,13 +78,15 @@ void irq_handler(struct registers* regs) {
     else if (regs->int_no == 14) { //page fault
         page_fault_handler(regs);
     }
+    else if (regs->int_no == 10) { //double fault
+        double_fault_handler(regs);
+    }
 
     // EOI (End Of Interrupt)
     write_port(0x20, 0x20);
 }
 
 void page_fault_handler(struct registers* regs) {
-    printf("\nPAGE FAULT DETECTED\nATTEMPTING AUTOMATIC MAPPING");
     uint64_t faulting_address;
     __asm__ volatile("mov %%cr2, %0" : "=r" (faulting_address));
 
@@ -108,8 +114,16 @@ void page_fault_handler(struct registers* regs) {
     }
 
     // If we reach here, it's a genuine crash (e.g., NULL pointer or permission violation)
-    printf("\nFATAL ERROR: Unhandled Page Fault at %p | Error: %x | IP: %p\n", 
+    printf("\nFATAL ERROR: Unhandled Page Fault at %p | ERROR: %x | RIP: %p\n", 
             faulting_address, regs->err_code, regs->rip);
     
+    __asm__("cli");
+    for(;;) __asm__("hlt");
+}
+
+void double_fault_handler(struct registers* regs){
+    printf("\nDOUBLE FAULT OCCURED!!!");
+    printf("\nRIP: %p CS: %x\n", regs->rip, regs->err_code);
+    __asm__("cli");
     for(;;) __asm__("hlt");
 }
