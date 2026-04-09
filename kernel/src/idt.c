@@ -20,9 +20,11 @@ struct registers {
 
 void page_fault_handler(struct registers* regs);
 void double_fault_handler(struct registers* regs);
+void tss_fault_handler(struct registers* regs);
 extern void keyboard_handler_asm();
 extern void page_fault_handler_asm();
 extern void double_fault_handler_asm();
+extern void tss_fault_handler_asm();
 extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 struct idt_entry idt[256];
@@ -57,7 +59,9 @@ void init_idt() {
 
     idt_set_gate(14, (uint64_t)page_fault_handler_asm);
 
-    idt_set_gate(10, (uint64_t)double_fault_handler_asm);
+    idt_set_gate(8, (uint64_t)double_fault_handler_asm);
+
+    idt_set_gate(10, (uint64_t)tss_fault_handler_asm);
 
     // Update PIC mask to allow IRQ 0 AND IRQ 1
     write_port(0x21, 0xFC);
@@ -78,9 +82,13 @@ void irq_handler(struct registers* regs) {
     else if (regs->int_no == 14) { //page fault
         page_fault_handler(regs);
     }
-    else if (regs->int_no == 10) { //double fault
+    else if (regs->int_no == 8) { //double fault
         double_fault_handler(regs);
     }
+    else if (regs->int_no = 10) { //tss faukt
+        tss_fault_handler(regs);
+    }
+
 
     // EOI (End Of Interrupt)
     write_port(0x20, 0x20);
@@ -124,8 +132,17 @@ void page_fault_handler(struct registers* regs) {
 }
 
 void double_fault_handler(struct registers* regs){
+    uint64_t faulting_address;
+    __asm__ volatile("mov %%cr2, %0" : "=r" (faulting_address));
     printf("\nDOUBLE FAULT OCCURED!!!");
-    printf("\nRIP: %p CS: %x\n", regs->rip, regs->err_code);
+    printf("\nRIP: %p CS: %x\n", regs->rip, faulting_address);
+    __asm__("cli");
+    for(;;) __asm__("hlt");
+}
+void tss_fault_handler(struct registers* regs){
+    uint64_t faulting_address;
+    __asm__ volatile("mov %%cr2, %0" : "=r" (faulting_address));
+    printf("\nFATAL ERROR: Unhandled TSS Fault at %p | ERROR: %x | RIP: %p\n", faulting_address, regs->err_code, regs->rip);
     __asm__("cli");
     for(;;) __asm__("hlt");
 }

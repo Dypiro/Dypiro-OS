@@ -29,15 +29,15 @@ extern uint8_t read_port(uint16_t port);
 extern void write_port(uint16_t port, uint8_t value);
 
 void user_program() {
-    // Pick an address close to your stack (which we know works!)
+    // Pick an address close to the stack (which we know works!)
     // If stack is at 0x7FFFFFFF000, let's try 0x7FFFFEE000
     uint64_t* ptr = (uint64_t*)0x7FFFFEE000; 
     
     // This SHOULD trigger a Page Fault (Not Present)
-    // Your handler should catch it, map it, and return here.
+    // The handler should catch it, map it, and return here.
     *ptr = 0xDEADC0DE; 
 
-    // If we reach this line, your OS is officially handling demand paging!
+    // If we reach this line, the OS is officially handling demand paging!
     while(1); 
 }
 

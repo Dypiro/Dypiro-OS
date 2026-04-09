@@ -51,3 +51,8 @@ double_fault_handler_asm:
     ;CPU automatically pushes error code here
     push 8                 ; Push interrupt number
     jmp interrupt_common_stub
+
+global tss_fault_handler_asm
+tss_fault_handler_asm:
+    push 10
+    jmp interrupt_common_stub
