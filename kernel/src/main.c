@@ -11,6 +11,7 @@
 #include "pic.h"
 #include "mem.h"
 #include "vfs.h"
+#include "tss.h"
 
 
 // Define where we want the framebuffer to live in our virtual memory
